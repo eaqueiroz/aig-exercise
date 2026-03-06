@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { getJob } from '../services/job-service.js';
+import { getJobById } from '../services/job-service.js';
 import { jsonResponse } from '../shared/utils.js';
 
 export async function handler(event: APIGatewayProxyEventV2) {
@@ -9,7 +9,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
     return jsonResponse(400, { message: 'jobId is required' });
   }
 
-  const job = await getJob(jobId);
+  const job = await getJobById(jobId);
 
   if (!job) {
     return jsonResponse(404, { message: 'Job not found' });

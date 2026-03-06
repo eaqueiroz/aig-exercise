@@ -1,6 +1,7 @@
 import {
     GetCommand,
     PutCommand,
+    ScanCommand,
     UpdateCommand
   } from '@aws-sdk/lib-dynamodb';
   import { ddb } from '../shared/dynamo.js';
@@ -22,7 +23,7 @@ import {
     );
   }
   
-  export async function getJob(jobId: string): Promise<JobRecord | undefined> {
+  export async function getJobById(jobId: string): Promise<JobRecord | undefined> {
     const response = await ddb.send(
       new GetCommand({
         TableName: tableName,
@@ -32,7 +33,19 @@ import {
   
     return response.Item as JobRecord | undefined;
   }
-  
+
+  export async function getJobByFileName(fileName: string): Promise<JobRecord | undefined> {
+    // we don't have a index on fileName, so we make a scan query to get the job by fileName
+    const response = await ddb.send(
+      new ScanCommand({
+        TableName: tableName,
+        FilterExpression: 'fileName = :fileName',
+        ExpressionAttributeValues: { ':fileName': fileName }
+      })
+    );
+    return response.Items?.[0] as JobRecord | undefined;
+  }
+
   export async function markProcessing(jobId: string): Promise<boolean> {
     try {
       await ddb.send(

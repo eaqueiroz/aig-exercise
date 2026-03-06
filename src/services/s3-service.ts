@@ -14,7 +14,7 @@ export async function createPresignedUploadUrl(params: {
     ContentType: params.contentType
   });
 
-  return getSignedUrl(s3, command, { expiresIn: 900 });
+  return getSignedUrl(s3, command, { expiresIn: 900 }); // 15 minutes
 }
 
 export async function getObjectText(params: {

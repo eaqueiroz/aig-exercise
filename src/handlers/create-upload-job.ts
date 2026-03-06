@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { createJob } from '../services/job-service.js';
+import { createJob, getJobByFileName } from '../services/job-service.js';
 import { createPresignedUploadUrl } from '../services/s3-service.js';
 import { logError, logInfo } from '../shared/logger.js';
 import { generateCorrelationId, generateJobId, jsonResponse, nowIso } from '../shared/utils.js';
@@ -16,12 +16,21 @@ export async function handler(event: APIGatewayProxyEventV2) {
     const body = event.body ? JSON.parse(event.body) : undefined;
     const request = validateCreateUploadRequest(body);
 
+    // check if the file name is already in the database
+    const job = await getJobByFileName(request.fileName);
+    if (job) {
+      //return a confilict error
+      return jsonResponse(409, {
+        message: 'File name already exists'
+      });
+    }
+
     const jobId = generateJobId();
     const correlationId = generateCorrelationId();
     const s3Key = `uploads/${jobId}/${request.fileName}`;
     const now = nowIso();
 
-    const job: JobRecord = {
+    const newJob: JobRecord = {
       jobId,
       status: 'PENDING',
       fileName: request.fileName,
@@ -32,8 +41,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
       updatedAt: now,
       correlationId
     };
-
-    await createJob(job);
+    await createJob(newJob);
 
     const uploadUrl = await createPresignedUploadUrl({
       bucket: bucketName,
@@ -41,14 +49,12 @@ export async function handler(event: APIGatewayProxyEventV2) {
       contentType: request.contentType
     });
 
-    logInfo('Created upload job', { jobId, correlationId, s3Key });
-
-    return jsonResponse(201, {
+    return jsonResponse(200, {
       jobId,
       status: 'PENDING',
-      uploadUrl,
       s3Key,
-      correlationId
+      correlationId,
+      uploadUrl
     });
   } catch (error) {
     logError('Failed to create upload job', {
