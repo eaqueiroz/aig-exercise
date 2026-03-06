@@ -1,68 +1,62 @@
-import type { S3Event } from 'aws-lambda';
-import { getJob, markDone, markFailed, markProcessing } from '../services/job-service.js';
-import { getObjectText } from '../services/s3-service.js';
-import { processText } from '../services/text-processor.js';
+import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { createJob } from '../services/job-service.js';
+import { createPresignedUploadUrl } from '../services/s3-service.js';
 import { logError, logInfo } from '../shared/logger.js';
+import { generateCorrelationId, generateJobId, jsonResponse, nowIso } from '../shared/utils.js';
+import { validateCreateUploadRequest } from '../shared/validation.js';
+import type { JobRecord } from '../shared/types.js';
 
-export async function handler(event: S3Event): Promise<void> {
-  for (const record of event.Records) {
-    const bucket = record.s3.bucket.name;
-    const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
+const bucketName:string = process.env.UPLOAD_BUCKET_NAME || '';
+if (!bucketName) {
+  throw new Error('UPLOAD_BUCKET_NAME is not configured');
+}
 
-    const parts = key.split('/');
-    const jobId = parts.length >= 2 ? parts[1] : undefined;
+export async function handler(event: APIGatewayProxyEventV2) {
+  try {
+    const body = event.body ? JSON.parse(event.body) : undefined;
+    const request = validateCreateUploadRequest(body);
 
-    if (!jobId) {
-      logError('Could not derive jobId from S3 key', { key });
-      continue;
-    }
+    const jobId = generateJobId();
+    const correlationId = generateCorrelationId();
+    const s3Key = `uploads/${jobId}/${request.fileName}`;
+    const now = nowIso();
 
-    const job = await getJob(jobId);
+    const job: JobRecord = {
+      jobId,
+      status: 'PENDING',
+      fileName: request.fileName,
+      contentType: request.contentType,
+      s3Bucket: bucketName,
+      s3Key,
+      createdAt: now,
+      updatedAt: now,
+      correlationId
+    };
 
-    if (!job) {
-      logError('Job not found for uploaded file', { jobId, key });
-      continue;
-    }
+    await createJob(job);
 
-    if (job.status === 'DONE') {
-      logInfo('Skipping already completed job', { jobId, key });
-      continue;
-    }
+    const uploadUrl = await createPresignedUploadUrl({
+      bucket: bucketName,
+      key: s3Key,
+      contentType: request.contentType
+    });
 
-    const acquired = await markProcessing(jobId);
-    if (!acquired) {
-      logInfo('Skipping duplicate or already processing event', { jobId, key, currentStatus: job.status });
-      continue;
-    }
+    logInfo('Created upload job', { jobId, correlationId, s3Key });
 
-    try {
-      logInfo('Processing started', {
-        jobId,
-        correlationId: job.correlationId,
-        bucket,
-        key
-      });
+    return jsonResponse(201, {
+      jobId,
+      status: 'PENDING',
+      uploadUrl,
+      s3Key,
+      correlationId
+    });
+  } catch (error) {
+    logError('Failed to create upload job', {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
 
-      const content = await getObjectText({ bucket, key });
-      const result = processText(content);
-
-      await markDone(jobId, result);
-
-      logInfo('Processing completed', {
-        jobId,
-        correlationId: job.correlationId,
-        result
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown processing error';
-
-      await markFailed(jobId, message);
-
-      logError('Processing failed', {
-        jobId,
-        correlationId: job.correlationId,
-        error: message
-      });
-    }
+    return jsonResponse(400, {
+      message: error instanceof Error ? error.message : 'Bad request'
+    });
   }
 }

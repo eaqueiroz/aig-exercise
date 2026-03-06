@@ -3,6 +3,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: AIG async file processing exercise
 
+
 # Defaults applied to all Lambda functions in this stack
 Globals:
   Function:
@@ -12,19 +13,22 @@ Globals:
     # Injected into every function so they can access jobs table and upload bucket
     Environment:
       Variables:
-        JOBS_TABLE_NAME: !Ref JobsTable
-        UPLOAD_BUCKET_NAME: !Ref UploadBucket
+        JOBS_TABLE_NAME: jobs
+        # Dynamic name avoids circular dependency and Early Validation ResourceExistenceCheck
+        UPLOAD_BUCKET_NAME: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
 
 Resources:
   # S3 bucket where clients upload files; objects under uploads/ trigger processing
   UploadBucket:
     Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
 
   # Table storing job metadata (status, created at, etc.) keyed by jobId
   JobsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub '${AWS::StackName}-jobs'
+      TableName: jobs
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: jobId
@@ -41,8 +45,9 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref JobsTable
+        # Same !Sub as bucket (no Ref) to avoid circular dependency and early-validation hook
         - S3WritePolicy:
-            BucketName: !Ref UploadBucket
+            BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
       Events:
         Api:
           Type: Api
@@ -75,8 +80,9 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref JobsTable
+        # Same !Sub as bucket (no Ref) to avoid circular dependency and early-validation hook
         - S3ReadPolicy:
-            BucketName: !Ref UploadBucket
+            BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
       Events:
         S3Upload:
           Type: S3

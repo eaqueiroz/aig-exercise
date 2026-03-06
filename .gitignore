@@ -38,3 +38,6 @@ lerna-debug.log*
 # Dynamo DB
 my-dynamodb-data
 dynamodb-data
+
+# SAM
+.aws-sam/*
