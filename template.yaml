@@ -1,0 +1,100 @@
+# CloudFormation / SAM template for AIG async file processing
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AIG async file processing exercise
+
+# Defaults applied to all Lambda functions in this stack
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    # Injected into every function so they can access jobs table and upload bucket
+    Environment:
+      Variables:
+        JOBS_TABLE_NAME: !Ref JobsTable
+        UPLOAD_BUCKET_NAME: !Ref UploadBucket
+
+Resources:
+  # S3 bucket where clients upload files; objects under uploads/ trigger processing
+  UploadBucket:
+    Type: AWS::S3::Bucket
+
+  # Table storing job metadata (status, created at, etc.) keyed by jobId
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-jobs'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+
+  # Creates a new upload job: writes to DynamoDB and returns presigned S3 URL (POST /uploads)
+  CreateUploadJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/src/handlers/create-upload-job.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3WritePolicy:
+            BucketName: !Ref UploadBucket
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /uploads
+            Method: post
+
+  # Returns current status of a job by jobId (GET /jobs/{jobId})
+  GetJobStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/src/handlers/get-job-status.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /jobs/{jobId}
+            Method: get
+
+  # Invoked when a file is uploaded to uploads/; processes file and updates job status
+  ProcessFileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/src/handlers/process-file.handler
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3ReadPolicy:
+            BucketName: !Ref UploadBucket
+      Events:
+        S3Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadBucket
+            Events: s3:ObjectCreated:*
+            # Only objects under uploads/ prefix trigger this function
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+
+# Values exposed after stack deployment (e.g. for client config or scripts)
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+  BucketName:
+    Value: !Ref UploadBucket
+  JobsTableName:
+    Value: !Ref JobsTable
