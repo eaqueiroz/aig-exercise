@@ -1,0 +1,17 @@
+{
+    "version": "2.0",
+    "routeKey": "POST /uploads",
+    "rawPath": "/uploads",
+    "rawQueryString": "",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "requestContext": {
+      "http": {
+        "method": "POST",
+        "path": "/uploads"
+      }
+    },
+    "body": "{\"fileName\":\"sample.txt\",\"contentType\":\"text/plain\"}",
+    "isBase64Encoded": false
+  }
