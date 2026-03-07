@@ -6,6 +6,11 @@ Description: AIG exercise
 
 # Defaults applied to all Lambda functions in this stack
 Globals:
+  Api:
+    Cors:
+      AllowOrigin: "'*'"
+      AllowMethods: "'GET,POST,PUT,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization'"
   Function:
     Runtime: nodejs20.x
     Timeout: 30
@@ -56,6 +61,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [PUT, GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
       NotificationConfiguration:
         QueueConfigurations:
           - Event: s3:ObjectCreated:*
