@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/**/*.test.js",
+    "test": "node --test dist/tests",
     "sam:build": "sam build",
     "sam:deploy": "sam deploy --guided"
   },
