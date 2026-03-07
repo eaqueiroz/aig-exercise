@@ -12,36 +12,35 @@ export async function handler(event: S3Event): Promise<void> {
     const parts = key.split('/');
     const jobId = parts.length >= 2 ? parts[1] : undefined;
 
-    if (!jobId) {
-      logError('invalid file name', { key });
-      continue;
-    }
-
-    const job = await getJobById(jobId);
-
-    if (!job) {
-      logError('Job not found for uploaded file', { jobId, key });
-      continue;
-    }
-
-    if (job.status === 'DONE') {
-      logInfo('Skipping already completed job', { jobId, key });
-      continue;
-    }
-
-    const acquired = await markProcessing(jobId);
-    if (!acquired) {
-      logInfo('Skipping duplicate or already processing event', { jobId, key, currentStatus: job.status });
-      continue;
-    }
-
     try {
+      if (!jobId) {
+        throw new Error('invalid file name');
+      }
+
+      const job = await getJobById(jobId);
+
+      if (!job) {
+        throw new Error('Job not found for uploaded file');
+      }
+
+      if (job.status === 'DONE') {
+        logInfo('Skipping already completed job', { jobId, key });
+        continue;
+      }
+
+      await markProcessing(jobId);
       logInfo('Processing started', {
         jobId,
         correlationId: job.correlationId,
         bucket,
         key
       });
+
+      // this code is for testing the DLQ and Indepotency
+      // randomly fail 50% of the time
+      if (Math.random() < 1) {
+        throw new Error('Dead Letter Queue failure test');
+      }
 
       const content = await getObjectText({ bucket, key });
       const result = processText(content);
@@ -56,13 +55,17 @@ export async function handler(event: S3Event): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown processing error';
 
-      await markFailed(jobId, message);
+      if (jobId) {
+        await markFailed(jobId, message);
 
-      logError('Processing failed', {
-        jobId,
-        correlationId: job.correlationId,
-        error: message
-      });
+        logError('Processing failed', {
+          jobId,
+          error: message
+        });
+
+        // make sure to throw the error so it goes to the DLQ
+        throw new Error(message);
+      }
     }
   }
 }

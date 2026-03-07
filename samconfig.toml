@@ -5,7 +5,7 @@ stack_name = "aig"
 resolve_s3 = true
 s3_prefix = "aig"
 region = "eu-west-1"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
 

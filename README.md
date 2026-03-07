@@ -6,6 +6,7 @@ Serverless async file processing system using:
 - AWS Lambda
 - S3
 - DynamoDB
+- SQS
 
 Flow:
 1. Client calls POST /uploads
@@ -23,8 +24,8 @@ S3 -> Lambda Processor -> DynamoDB
 ## Status Model
 PENDING -> PROCESSING -> DONE / FAILED
 
-## Idempotency
-Processing Lambda uses DynamoDB conditional updates to ensure jobs are only processed once.
+## DLQ
+A dead-letter queue was added for the processing Lambda using Amazon SQS. If asynchronous processing repeatedly fails, the failed invocation event can be routed to the DLQ for later inspection or replay.
 
 ## Run
 npm install

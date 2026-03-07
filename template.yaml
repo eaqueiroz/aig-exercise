@@ -1,7 +1,7 @@
 # CloudFormation / SAM template for AIG async file processing
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: AIG async file processing exercise
+Description: AIG exercise
 
 
 # Defaults applied to all Lambda functions in this stack
@@ -36,6 +36,12 @@ Resources:
       KeySchema:
         - AttributeName: jobId
           KeyType: HASH
+
+  # Dead Letter Queue for ProcessFileFunction
+  ProcessFileDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-process-file-dlq'
 
   # Creates a new upload job: writes to DynamoDB and returns presigned S3 URL (POST /uploads)
   CreateUploadJobFunction:
@@ -77,12 +83,20 @@ Resources:
       Handler: dist/src/handlers/process-file.handler
       Timeout: 60
       MemorySize: 512
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ProcessFileDLQ.Arn
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0 # no retries, so we can test the DLQ (the default is 2 retries, (3 attempts total))
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref JobsTable
-        # Same !Sub as bucket (no Ref) to avoid circular dependency and early-validation hook
+        # Same !Sub as bucket (no Ref) to avoid circular dependency
         - S3ReadPolicy:
             BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
+        # Allow the function to send messages to the DLQ
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ProcessFileDLQ.QueueName
       Events:
         S3Upload:
           Type: S3
@@ -104,3 +118,7 @@ Outputs:
     Value: !Ref UploadBucket
   JobsTableName:
     Value: !Ref JobsTable
+  ProcessFileDLQName:
+    Value: !Ref ProcessFileDLQ
+  ProcessFileDLQArn:
+    Value: !GetAtt ProcessFileDLQ.Arn
