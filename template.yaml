@@ -24,7 +24,7 @@ Resources:
     Properties:
       BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
 
-  # Table storing job metadata (status, created at, etc.) keyed by jobId
+  # DynamoDB table
   JobsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -43,17 +43,26 @@ Resources:
     Properties:
       QueueName: !Sub '${AWS::StackName}-process-file-dlq'
 
-  # Creates a new upload job: writes to DynamoDB and returns presigned S3 URL (POST /uploads)
+  # Lambda fucntion for (POST /uploads)
   CreateUploadJobFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: dist/src/handlers/create-upload-job.handler
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref JobsTable
-        # Same !Sub as bucket (no Ref) to avoid circular dependency and early-validation hook
-        - S3WritePolicy:
-            BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
+        # Least-privilege: PutItem (createJob), Scan (getJobByFileName)
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:Scan
+              Resource: !GetAtt JobsTable.Arn
+        # Least-privilege: PutObject only (for presigned upload URL generation)
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-uploads-${AWS::AccountId}/uploads/*'
       Events:
         Api:
           Type: Api
@@ -67,8 +76,12 @@ Resources:
     Properties:
       Handler: dist/src/handlers/get-job-status.handler
       Policies:
-        - DynamoDBReadPolicy:
-            TableName: !Ref JobsTable
+        # Least-privilege: GetItem only (getJobById)
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt JobsTable.Arn
       Events:
         Api:
           Type: Api
@@ -89,14 +102,26 @@ Resources:
       EventInvokeConfig:
         MaximumRetryAttempts: 0 # no retries, so we can test the DLQ (the default is 2 retries, (3 attempts total))
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref JobsTable
-        # Same !Sub as bucket (no Ref) to avoid circular dependency
-        - S3ReadPolicy:
-            BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
-        # Allow the function to send messages to the DLQ
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt ProcessFileDLQ.QueueName
+        # Least-privilege: GetItem (getJobById), UpdateItem (markProcessing, markDone, markFailed)
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt JobsTable.Arn
+        # Least-privilege: GetObject only on uploads/ prefix
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-uploads-${AWS::AccountId}/uploads/*'
+        # Least-privilege: SendMessage to DLQ only
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt ProcessFileDLQ.Arn
       Events:
         S3Upload:
           Type: S3

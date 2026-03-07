@@ -27,8 +27,10 @@ PENDING -> PROCESSING -> DONE / FAILED
 ## DLQ
 A dead-letter queue was added for the processing Lambda using Amazon SQS. If asynchronous processing repeatedly fails, the failed invocation event can be routed to the DLQ for later inspection or replay.
 
+## IAM
+Each Lambda has a dedicated execution role with least-privilege permissions defined in `template.yaml`: only the DynamoDB, S3, and SQS actions and resources each function needs (e.g. GetItem/UpdateItem for the processor, GetObject on `uploads/*`, SendMessage to the DLQ).
+
 ## Run
 npm install
 npm run build
-sam build
 sam deploy --guided
