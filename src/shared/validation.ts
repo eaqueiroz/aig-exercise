@@ -1,5 +1,13 @@
 import { ALLOWED_CONTENT_TYPES } from './constants.js';
 
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    Object.setPrototypeOf(this, ValidationError.prototype);
+  }
+}
+
 export interface CreateUploadRequest {
   fileName: string;
   contentType: string;
@@ -7,7 +15,7 @@ export interface CreateUploadRequest {
 
 export function validateCreateUploadRequest(body: unknown): CreateUploadRequest {
   if (!body || typeof body !== 'object') {
-    throw new Error('Request body is required');
+    throw new ValidationError('Request body is required');
   }
 
   const candidate = body as Record<string, unknown>;
@@ -15,11 +23,11 @@ export function validateCreateUploadRequest(body: unknown): CreateUploadRequest 
   const contentType = candidate.contentType;
 
   if (typeof fileName !== 'string' || fileName.trim().length === 0) {
-    throw new Error('fileName is required');
+    throw new ValidationError('fileName is required');
   }
 
   if (typeof contentType !== 'string' || !ALLOWED_CONTENT_TYPES.has(contentType)) {
-    throw new Error('Unsupported contentType');
+    throw new ValidationError('Unsupported contentType');
   }
 
   return {

@@ -3,7 +3,7 @@ import { createJob } from '../services/job-service.js';
 import { createPresignedUploadUrl } from '../services/s3-service.js';
 import { logError } from '../shared/logger.js';
 import { generateCorrelationId, generateJobId, jsonResponse, nowIso } from '../shared/utils.js';
-import { validateCreateUploadRequest } from '../shared/validation.js';
+import { ValidationError, validateCreateUploadRequest } from '../shared/validation.js';
 import type { JobRecord } from '../shared/types.js';
 import { JOB_STATUS, MAX_FILE_SIZE_BYTES } from '../shared/constants.js';
 
@@ -50,12 +50,18 @@ export async function handler(event: APIGatewayProxyEventV2) {
       maxFileSize: MAX_FILE_SIZE_BYTES
     });
   } catch (error) {
+    // Client errors: validation or invalid JSON → 400 with safe message
+    if (error instanceof ValidationError) {
+      return jsonResponse(400, { message: error.message });
+    }
+    if (error instanceof SyntaxError) {
+      return jsonResponse(400, { message: 'Invalid request body' });
+    }
+
+    // Server errors (DynamoDB, S3, etc.) → 500, log details, generic response
     logError('Failed to create upload job', {
       error: error instanceof Error ? error.message : 'Unknown error'
     });
-
-    return jsonResponse(400, {
-      message: error instanceof Error ? error.message : 'Bad request'
-    });
+    return jsonResponse(500, { message: 'Internal server error' });
   }
 }

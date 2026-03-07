@@ -126,6 +126,12 @@ This ensures retries do not produce inconsistent data.
 ---
 
 ## Observability and Logging
+The API distinguishes **client errors** (4xx) from **server errors** (5xx):
+
+- **400 Bad Request** – Invalid or missing request data (e.g. missing `fileName`, unsupported `contentType`, invalid JSON body). The response body includes a `message` field with a safe, client-facing description.
+- **404 Not Found** – `GET /jobs/{jobId}` when the job does not exist.
+- **500 Internal Server Error** – Unexpected failures (e.g. DynamoDB or S3 errors). The response body returns a generic `"Internal server error"` message; details are logged server-side only and are not exposed to the client.
+
 
 Logging is implemented using **structured JSON logs**.
 
@@ -153,7 +159,6 @@ The initial design used a direct S3 trigger to invoke the processing Lambda, wit
 The design was revised to introduce SQS between S3 and the processing Lambda. When an upload completes, S3 publishes an event to an SQS queue that the processor Lambda consumes. If processing repeatedly fails, the message is automatically moved to a DLQ. This allows failed messages to be easily redriven back to the source queue for controlled retries.
 
 ---
-
 
 
 # How to Run
