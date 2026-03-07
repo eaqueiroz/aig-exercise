@@ -10,19 +10,61 @@ Globals:
     Runtime: nodejs20.x
     Timeout: 30
     MemorySize: 256
-    # Injected into every function so they can access jobs table and upload bucket
     Environment:
       Variables:
         JOBS_TABLE_NAME: jobs
-        # Dynamic name avoids circular dependency and Early Validation ResourceExistenceCheck
+        # TODO: move this to a parameter and prevent the Early Validation ResourceExistenceCheck
         UPLOAD_BUCKET_NAME: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
 
 Resources:
-  # S3 bucket where clients upload files; objects under uploads/ trigger processing
+  # Dead Letter Queue for failed process
+  ProcessFileDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-file-upload-queue-dlq'
+
+  # SQS queue that receives S3 upload notifications
+  FileUploadQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-file-upload-queue'
+      VisibilityTimeout: 60 # give enough time to the function to process before moving to the DLQ
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ProcessFileDLQ.Arn
+        maxReceiveCount: 1 # I set it to 1 to facilitate the testing of the DLQ and Indepotency
+
+  # Allow S3 to send messages to FileUploadQueue (required for S3 event notifications)
+  FileUploadQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref FileUploadQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FileUploadQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:s3:::${AWS::StackName}-uploads-${AWS::AccountId}'
+
+  # S3 bucket where clients upload files; objects under uploads/ send notifications to SQS
   UploadBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${AWS::StackName}-uploads-${AWS::AccountId}'
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt FileUploadQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
 
   # DynamoDB table
   JobsTable:
@@ -36,12 +78,6 @@ Resources:
       KeySchema:
         - AttributeName: jobId
           KeyType: HASH
-
-  # Dead Letter Queue for ProcessFileFunction
-  ProcessFileDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub '${AWS::StackName}-process-file-dlq'
 
   # Lambda fucntion for (POST /uploads)
   CreateUploadJobFunction:
@@ -89,18 +125,12 @@ Resources:
             Path: /jobs/{jobId}
             Method: get
 
-  # Invoked when a file is uploaded to uploads/; processes file and updates job status
+  # Consumes FileUploadQueue (S3 posts to queue on upload)
   ProcessFileFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: dist/src/handlers/process-file.handler
-      Timeout: 60
       MemorySize: 512
-      DeadLetterQueue:
-        Type: SQS
-        TargetArn: !GetAtt ProcessFileDLQ.Arn
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0 # no retries, so we can test the DLQ (the default is 2 retries, (3 attempts total))
       Policies:
         # Least-privilege: GetItem (getJobById), UpdateItem (markProcessing, markDone, markFailed)
         - Version: '2012-10-17'
@@ -116,24 +146,12 @@ Resources:
             - Effect: Allow
               Action: s3:GetObject
               Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-uploads-${AWS::AccountId}/uploads/*'
-        # Least-privilege: SendMessage to DLQ only
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action: sqs:SendMessage
-              Resource: !GetAtt ProcessFileDLQ.Arn
       Events:
-        S3Upload:
-          Type: S3
+        FileUploadQueue:
+          Type: SQS
           Properties:
-            Bucket: !Ref UploadBucket
-            Events: s3:ObjectCreated:*
-            # Only objects under uploads/ prefix trigger this function
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: uploads/
+            Queue: !GetAtt FileUploadQueue.Arn
+            BatchSize: 10
 
 # Values exposed after stack deployment (e.g. for client config or scripts)
 Outputs:
@@ -143,6 +161,10 @@ Outputs:
     Value: !Ref UploadBucket
   JobsTableName:
     Value: !Ref JobsTable
+  FileUploadQueueUrl:
+    Value: !Ref FileUploadQueue
+  FileUploadQueueArn:
+    Value: !GetAtt FileUploadQueue.Arn
   ProcessFileDLQName:
     Value: !Ref ProcessFileDLQ
   ProcessFileDLQArn:
