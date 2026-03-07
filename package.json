@@ -5,6 +5,8 @@
   "scripts": {
     "build": "tsc",
     "test": "node --test dist/tests",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "sam:build": "sam build",
     "sam:deploy": "sam deploy --guided"
   },
@@ -17,7 +19,11 @@
     "ulid": "^2.3.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^24.3.0",
-    "typescript": "^5.9.2"
+    "eslint": "^9.39.4",
+    "globals": "^17.4.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.56.1"
   }
 }

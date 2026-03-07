@@ -1,13 +1,13 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { createJob, getJobByFileName } from '../services/job-service.js';
+import { createJob } from '../services/job-service.js';
 import { createPresignedUploadUrl } from '../services/s3-service.js';
-import { logError, logInfo } from '../shared/logger.js';
+import { logError } from '../shared/logger.js';
 import { generateCorrelationId, generateJobId, jsonResponse, nowIso } from '../shared/utils.js';
 import { validateCreateUploadRequest } from '../shared/validation.js';
 import type { JobRecord } from '../shared/types.js';
-import { MAX_FILE_SIZE_BYTES } from '../shared/constants.js';
+import { JOB_STATUS, MAX_FILE_SIZE_BYTES } from '../shared/constants.js';
 
-const bucketName:string = process.env.UPLOAD_BUCKET_NAME || '';
+const bucketName: string = process.env.UPLOAD_BUCKET_NAME ?? '';
 if (!bucketName) {
   throw new Error('UPLOAD_BUCKET_NAME is not configured');
 }
@@ -24,7 +24,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
 
     const newJob: JobRecord = {
       jobId,
-      status: 'PENDING',
+      status: JOB_STATUS.PENDING,
       fileName: request.fileName,
       contentType: request.contentType,
       s3Bucket: bucketName,
@@ -43,7 +43,7 @@ export async function handler(event: APIGatewayProxyEventV2) {
 
     return jsonResponse(200, {
       jobId,
-      status: 'PENDING',
+      status: JOB_STATUS.PENDING,
       s3Key,
       correlationId,
       uploadUrl,

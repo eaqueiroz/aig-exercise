@@ -33,5 +33,5 @@ export async function getObjectText(params: {
     throw new Error('S3 object body was empty');
   }
 
-  return await body.transformToString();
+  return body.transformToString();
 }

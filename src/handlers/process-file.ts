@@ -1,9 +1,9 @@
 import type { SQSEvent, S3Event } from 'aws-lambda';
-import { getJobById, markDone, markFailed, markProcessing } from '../services/job-service';
-import { getObjectText } from '../services/s3-service';
-import { processText } from '../services/text-processor';
-import { logError, logInfo } from '../shared/logger';
-import { MAX_FILE_SIZE_BYTES } from '../shared/constants';
+import { getJobById, markDone, markFailed, markProcessing } from '../services/job-service.js';
+import { getObjectText } from '../services/s3-service.js';
+import { processText } from '../services/text-processor.js';
+import { logError, logInfo } from '../shared/logger.js';
+import { JOB_STATUS, MAX_FILE_SIZE_BYTES } from '../shared/constants.js';
 
 export async function handler(event: SQSEvent): Promise<void> {
   for (const sqsRecord of event.Records) {
@@ -46,7 +46,7 @@ export async function handler(event: SQSEvent): Promise<void> {
         // from now on, we can identify the job
         correlationId = job.correlationId;
 
-        if (job.status === 'DONE') {
+        if (job.status === JOB_STATUS.DONE) {
           logInfo('Skipping already completed job', { jobId, correlationId, key });
           continue;
         }
@@ -59,7 +59,7 @@ export async function handler(event: SQSEvent): Promise<void> {
           key
         });
 
-        // this code is for testing the DLQ and Indepotency
+        // this code is for testing the DLQ and Idempotency
         // randomly fail 50% of the time
         if (Math.random() < 0.5) {
           throw new Error('Dead Letter Queue failure test');

@@ -31,7 +31,7 @@ Resources:
       VisibilityTimeout: 60 # give enough time to the function to process before moving to the DLQ
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt ProcessFileDLQ.Arn
-        maxReceiveCount: 1 # I set it to 1 to facilitate the testing of the DLQ and Indepotency
+        maxReceiveCount: 1 # I set it to 1 to facilitate the testing of the DLQ and Idempotency
 
   # Allow S3 to send messages to FileUploadQueue (required for S3 event notifications)
   FileUploadQueuePolicy:
@@ -79,7 +79,7 @@ Resources:
         - AttributeName: jobId
           KeyType: HASH
 
-  # Lambda fucntion for (POST /uploads)
+  # Lambda function for (POST /uploads)
   CreateUploadJobFunction:
     Type: AWS::Serverless::Function
     Properties:
