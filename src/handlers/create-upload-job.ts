@@ -5,6 +5,7 @@ import { logError, logInfo } from '../shared/logger.js';
 import { generateCorrelationId, generateJobId, jsonResponse, nowIso } from '../shared/utils.js';
 import { validateCreateUploadRequest } from '../shared/validation.js';
 import type { JobRecord } from '../shared/types.js';
+import { MAX_FILE_SIZE_BYTES } from '../shared/constants.js';
 
 const bucketName:string = process.env.UPLOAD_BUCKET_NAME || '';
 if (!bucketName) {
@@ -15,15 +16,6 @@ export async function handler(event: APIGatewayProxyEventV2) {
   try {
     const body = event.body ? JSON.parse(event.body) : undefined;
     const request = validateCreateUploadRequest(body);
-
-    // check if the file name is already in the database
-    const job = await getJobByFileName(request.fileName);
-    if (job) {
-      //return a confilict error
-      return jsonResponse(409, {
-        message: 'File name already exists'
-      });
-    }
 
     const jobId = generateJobId();
     const correlationId = generateCorrelationId();
@@ -54,7 +46,8 @@ export async function handler(event: APIGatewayProxyEventV2) {
       status: 'PENDING',
       s3Key,
       correlationId,
-      uploadUrl
+      uploadUrl,
+      maxFileSize: MAX_FILE_SIZE_BYTES
     });
   } catch (error) {
     logError('Failed to create upload job', {
